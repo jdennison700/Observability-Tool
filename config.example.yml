@@ -1,0 +1,31 @@
+project:
+  owner_email: you@example.com
+  scan_interval: 6h
+  storage_path: ./observability.db
+
+defaults:
+  volume:
+    enabled: true
+    baseline_runs: 10
+    min_baseline_runs: 5
+    sigma: 3.0
+  null_rate:
+    enabled: true
+    baseline_runs: 10
+    min_baseline_runs: 5
+    delta: 0.10
+    fire_on_zero_baseline: true
+    exclude: []
+  schema_drift:
+    enabled: true
+  freshness:
+    enabled: true
+
+source:
+  name: warehouse
+  type: postgres
+  connection_env: WAREHOUSE_DSN
+  tables:
+    - name: public.some_table
+      cadence: daily
+      updated_at_column: updated_at
