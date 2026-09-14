@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from obs_tool.config.loader import load_config
+from obs_tool.config.startup_validation import validate_config_against_schema
 from obs_tool.connectors.postgres import PostgresConnector
 from obs_tool.storage.sqlite import SqliteStorage
 
@@ -30,13 +31,19 @@ def main():
     print(f"Loaded config version {version}.")
 
     dsn = os.environ[config.source.connection_env]
+    connector_required = config.source.type
+    if connector_required != "postgres":
+        raise ValueError(f"Unsupported connector type: {connector_required}")
     connector = PostgresConnector(dsn)
 
+    for table in config.source.tables:
+        validate_config_against_schema(config, get_schema=connector.get_schema)
     storage_path = config.project.storage_path
     storage = SqliteStorage(storage_path)
 
     for table in config.source.tables:
         table_name = table.name
+
 
         print(f"Introspecting {table_name}...")
         schema = connector.get_schema(table_name)
