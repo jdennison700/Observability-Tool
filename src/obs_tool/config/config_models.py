@@ -39,7 +39,7 @@ class ProjectConfig(BaseModel):
 
     owner_email: EmailStr = Field(..., description="Email address of the project owner.")
     scan_interval: int = Field(..., gt=0, description="Interval in hours between scans.")
-    heartbeat_interval: int = Field(24, gt=0, description="Interval in hours between heartbeat email events.")
+    heartbeat_interval: Optional[int] = Field(None, gt=0, description="Interval in hours between heartbeat email events. Defaults to scan_interval + 1 day.")
     storage_path: Path = Field(Path("./observability.db"), description="Path to the storage location.")
 
     @field_validator("scan_interval", "heartbeat_interval", mode="before")
@@ -51,7 +51,9 @@ class ProjectConfig(BaseModel):
 
     @model_validator(mode="after")
     def heartbeat_must_exceed_scan_interval(self):
-        """Ensure that heartbeat_interval is greater than scan_interval."""
+        """Default heartbeat_interval to scan_interval + 1 day, and ensure it exceeds scan_interval."""
+        if self.heartbeat_interval is None:
+            self.heartbeat_interval = self.scan_interval + 24
         if self.heartbeat_interval <= self.scan_interval:
             raise ValueError(
                 f"heartbeat_interval ({self.heartbeat_interval}) must be greater than "
