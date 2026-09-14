@@ -1,5 +1,7 @@
 """Startup validation: checks the config against the live source schema."""
 
+import os
+
 from obs_tool.config.config_models import AppConfig, TableConfig
 from obs_tool.config.loader import resolve_source_config
 
@@ -7,6 +9,21 @@ from obs_tool.config.loader import resolve_source_config
 class ConfigValidationError(Exception):
     """Raised when a structurally-valid config fails a startup check against live schema."""
 
+def validate_env_vars(config: AppConfig) -> None:
+    """Check that Warehouse environment variables are properly set."""
+    if not config.warehouse:
+        raise ConfigValidationError("Warehouse configuration is missing.")
+    if os.environ.get("WAREHOUSE_DSN") is None:
+        raise ConfigValidationError("WAREHOUSE_DSN environment variable is not set.")
+
+def validate_storage_path(config: AppConfig) -> None:
+    """Check that the storage path is writable."""
+    if not config.storage:
+        raise ConfigValidationError("Storage configuration is missing.")
+    if not os.path.exists(config.storage.path):
+        raise ConfigValidationError(f"Storage path '{config.storage.path}' does not exist.")
+    if not os.access(config.storage.path, os.W_OK):
+        raise ConfigValidationError(f"Storage path '{config.storage.path}' is not writable.")
 
 def validate_columns_exist(table: TableConfig, schema: dict) -> None:
     """updated_at_column, checks columns, expectations columns must all exist (spec §7)."""
@@ -70,6 +87,8 @@ def validate_config_against_schema(config: AppConfig, get_schema) -> None:
     this stays testable without a real DB connection. get_schema is expected
     to raise if the table itself doesn't exist (your connector already does this).
     """
+    validate_env_vars(config)
+    validate_storage_path(config)
     for table in config.source.tables:
         schema = get_schema(table.name)
         validate_columns_exist(table, schema)
