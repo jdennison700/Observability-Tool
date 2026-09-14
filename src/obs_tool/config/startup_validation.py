@@ -39,7 +39,7 @@ def validate_exclude_not_all_columns(table: TableConfig, schema: dict) -> None:
 def validate_at_least_one_enabled_check(table: TableConfig, defaults) -> None:
     """A table with every check disabled (after merge) is a meaningless entry (spec §7)."""
     effective = resolve_source_config(defaults, table.checks)
-    if not (effective.volume.enabled or effective.null_rate.enabled or effective.schema_drift.enabled):
+    if not (effective.volume.enabled or effective.null_rate.enabled or effective.schema_drift.enabled or table.cadence):
         raise ConfigValidationError(f"table '{table.name}' has no enabled checks")
 
 
