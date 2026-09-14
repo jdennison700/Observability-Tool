@@ -166,6 +166,14 @@ class ExpectationConfig(BaseModel):
     value: Optional[int | float | str | list[int | float | str]] = None
     agg: Optional[Literal["min", "max", "sum", "avg", "count", "count_distinct", "null_count"]] = None
 
+    @field_validator("value", mode="before")
+    @classmethod
+    def reject_bool_for_numeric_ops(cls, value, info):
+        op = info.data.get("op")
+        if op in ("gt", "gte", "lt", "lte") and isinstance(value, bool):
+            raise ValueError(f"op '{op}' requires a numeric value")
+        return value
+
     @model_validator(mode="after")
     def validate_expectation(self):
         if self.op == "not_null":
