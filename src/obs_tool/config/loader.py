@@ -41,7 +41,11 @@ def load_config(path: str = "config.yml") -> tuple[AppConfig, str]:
     contents (spec §2), for stamping into events so old events can be
     interpreted against the config that produced them.
     """
-    raw_text = Path(path).read_text()
+    if not Path(path).exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    raw_text = Path(path).read_text(encoding="utf-8")
+    if not raw_text.strip():
+        raise ValueError(f"Config file is empty: {path}")
     version = hashlib.sha256(raw_text.encode()).hexdigest()[:12]
     config = AppConfig.model_validate(yaml.safe_load(raw_text))
     return config, version
