@@ -177,6 +177,10 @@ class ExpectationConfig(BaseModel):
             if self.value is None:
                 raise ValueError(f"op '{self.op}' requires a value")
 
+        if self.op =='gt' or self.op =='lt' or self.op =='gte' or self.op =='lte':
+            if not isinstance(self.value, (int, float)):
+                raise ValueError(f"op '{self.op}' requires a numeric value")
+
         if self.op == "in":
             if not isinstance(self.value, list):
                 raise ValueError("op 'in' requires a list value")
