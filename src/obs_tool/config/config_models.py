@@ -6,8 +6,10 @@ from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 
-_DURATION_RE = re.compile(r"^(\d+)(h|d)$")
+CanonicalType = Literal["integer", "bigint", "float", "decimal", "boolean",
+    "string", "date", "timestamp", "json"]
 
+_DURATION_RE = re.compile(r"^(\d+)(h|d)$")
 
 def parse_duration_hours(value: str) -> int:
     """Parse a duration string like '20h' or '1d' into whole hours."""
@@ -151,7 +153,7 @@ class SchemaExpectationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     column: str
-    type: str
+    type: CanonicalType
     nullable: bool = True
 
 
