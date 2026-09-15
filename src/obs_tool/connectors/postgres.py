@@ -1,0 +1,91 @@
+from datetime import datetime
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+
+from .base import Connector
+
+_PG_TYPE_MAPPING = {
+    "smallint": "integer",
+    "integer": "integer",
+    "bigint": "bigint",
+    "decimal": "decimal",
+    "numeric": "decimal",
+    "real": "float",
+    "double precision": "float",
+    "boolean": "boolean",
+    "character varying": "string",
+    "varchar": "string",
+    "character": "string",
+    "char": "string",
+    "text": "string",
+    "date": "date",
+    "timestamp without time zone": "timestamp",
+    "timestamp with time zone": "timestamp"
+}
+
+class PostgresConnector(Connector):
+    def __init__(self, dsn: str):
+        # The project ships psycopg 3 (psycopg[binary]), but SQLAlchemy's
+        # default driver for a bare "postgresql://" URL is psycopg2. Steer
+        # it to psycopg 3 so the DSN doesn't have to spell out the driver.
+        url = make_url(dsn)
+        if url.drivername == "postgresql":
+            url = url.set(drivername="postgresql+psycopg")
+        self.engine = create_engine(url)
+
+    def get_schema(self, table_name: str) -> dict:
+        schema, _, table = table_name.partition(".")
+        if not table:
+            schema, table = "public", schema
+
+        query = text("""
+            select column_name, data_type, is_nullable
+            from information_schema.columns
+            where table_schema = :schema and table_name = :table
+            order by ordinal_position
+        """)
+        with self.engine.connect() as conn:
+            rows = conn.execute(query, {"schema": schema, "table": table}).fetchall()
+
+        if not rows:
+            raise ValueError(f"No columns found for {table_name} — does it exist?")
+
+        return {
+            row.column_name: {"type": row.data_type, "nullable": row.is_nullable == "YES"}
+            for row in rows
+        }
+
+    def get_row_count(self, table_name: str) -> int:
+        # NB: table_name is only ever sourced from our own validated config,
+        # never user input at request time — safe to interpolate as an identifier.
+        with self.engine.connect() as conn:
+            result = conn.execute(text(f"select count(*) from {table_name}"))
+            return result.scalar_one()
+
+    def get_null_count(self, table_name: str, column: str) -> int:
+        with self.engine.connect() as conn:
+            result = conn.execute(
+                text(f"select count(*) from {table_name} where {column} is null")
+            )
+            return result.scalar_one()
+
+    def get_last_updated(self, table_name: str, updated_at_column: str | None) -> datetime | None:
+        if updated_at_column:
+            with self.engine.connect() as conn:
+                result = conn.execute(
+                    text(f"select max({updated_at_column}) from {table_name}")
+                )
+                return result.scalar_one()
+        # TODO: system-table fallback (pg_stat_user_tables) — best-effort,
+        # see the caveat in the scope doc §4.2.
+        return None
+
+def normalise_type( pg_type: str) -> str:
+    """Convert a Postgres type to a canonical type."""
+    try:
+        return _PG_TYPE_MAPPING[pg_type]
+    except KeyError:
+        raise ValueError(
+            f"unmapped Postgres type '{pg_type}' — add it to _POSTGRES_TYPE_MAP"
+    )
