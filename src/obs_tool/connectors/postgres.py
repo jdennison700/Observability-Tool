@@ -14,16 +14,55 @@ _PG_TYPE_MAPPING = {
     "real": "float",
     "double precision": "float",
     "boolean": "boolean",
-    "character varying": "string",
-    "varchar": "string",
-    "character": "string",
-    "char": "string",
-    "text": "string",
+    "character varying": "varchar",
+    "varchar": "varchar",
+    "character": "char",
+    "char": "char",
+    "text": "text",
     "date": "date",
     "timestamp without time zone": "timestamp",
-    "timestamp with time zone": "timestamp"
+    "timestamp with time zone": "timestamp_tz",
+    "time without time zone": "time",
+    "time with time zone": "time_tz",
+    "interval": "interval",
+    "bytea": "bytea",
+    "uuid": "uuid",
+    "json": "json",
+    "jsonb": "jsonb",
+    "ARRAY": "array",
+    "inet": "inet",
+    "cidr": "cidr",
+    "macaddr": "macaddr",
+    "point": "point",
+    "line": "line",
+    "lseg": "lseg",
+    "box": "box",
+    "path": "path",
+    "polygon": "polygon",
+    "circle": "circle",
+    "money": "money",
+    "int4range": "int4range",
+    "int8range": "int8range",
+    "numrange": "numrange",
+    "tsrange": "tsrange",
+    "tstzrange": "tstzrange",
+    "daterange": "daterange",
+    "xml": "xml",
+    "bit varying": "varbit",
+    "bit": "bit",
+    "tsvector": "vector",
+    "tsquery": "tsquery",
+    "oid": "oid",
 }
 
+def normalise_type( pg_type: str) -> str:
+    """Convert a Postgres type to a canonical type."""
+    try:
+        return _PG_TYPE_MAPPING[pg_type]
+    except KeyError:
+        raise ValueError(
+            f"unmapped Postgres type '{pg_type}' — add it to _POSTGRES_TYPE_MAP"
+    )
 class PostgresConnector(Connector):
     def __init__(self, dsn: str):
         # The project ships psycopg 3 (psycopg[binary]), but SQLAlchemy's
@@ -40,7 +79,7 @@ class PostgresConnector(Connector):
             schema, table = "public", schema
 
         query = text("""
-            select column_name, data_type, is_nullable
+            select column_name, data_type, is_nullable, character_maximum_length, numeric_precision, numeric_scale
             from information_schema.columns
             where table_schema = :schema and table_name = :table
             order by ordinal_position
@@ -52,7 +91,7 @@ class PostgresConnector(Connector):
             raise ValueError(f"No columns found for {table_name} — does it exist?")
 
         return {
-            row.column_name: {"type": row.data_type, "nullable": row.is_nullable == "YES"}
+            row.column_name: {"type": normalise_type(row.data_type), "nullable": row.is_nullable == "YES", "max_length": row.character_maximum_length, "numeric_precision": row.numeric_precision, "numeric_scale": row.numeric_scale}
             for row in rows
         }
 
@@ -80,12 +119,3 @@ class PostgresConnector(Connector):
         # TODO: system-table fallback (pg_stat_user_tables) — best-effort,
         # see the caveat in the scope doc §4.2.
         return None
-
-def normalise_type( pg_type: str) -> str:
-    """Convert a Postgres type to a canonical type."""
-    try:
-        return _PG_TYPE_MAPPING[pg_type]
-    except KeyError:
-        raise ValueError(
-            f"unmapped Postgres type '{pg_type}' — add it to _POSTGRES_TYPE_MAP"
-    )
