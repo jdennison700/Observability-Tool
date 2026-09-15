@@ -1,9 +1,12 @@
+import logging
 from datetime import datetime
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
 from .base import Connector
+
+logger = logging.getLogger(__name__)
 
 _PG_TYPE_MAPPING = {
     "smallint": "integer",
@@ -55,14 +58,21 @@ _PG_TYPE_MAPPING = {
     "oid": "oid",
 }
 
-def normalise_type( pg_type: str) -> str:
-    """Convert a Postgres type to a canonical type."""
+def normalise_type(pg_type: str) -> str:
+    """Convert a Postgres type to a canonical type.
+
+    Falls back to the raw Postgres type name for anything not in the
+    mapping, so one unmapped column doesn't fail schema introspection
+    for the whole table.
+    """
     try:
         return _PG_TYPE_MAPPING[pg_type]
     except KeyError:
-        raise ValueError(
-            f"unmapped Postgres type '{pg_type}' — add it to _POSTGRES_TYPE_MAP"
-    )
+        logger.warning(
+            "unmapped Postgres type '%s' — add it to _PG_TYPE_MAPPING; using raw type name",
+            pg_type,
+        )
+        return pg_type
 class PostgresConnector(Connector):
     def __init__(self, dsn: str):
         # The project ships psycopg 3 (psycopg[binary]), but SQLAlchemy's
