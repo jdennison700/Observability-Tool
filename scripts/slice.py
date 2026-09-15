@@ -36,8 +36,7 @@ def main():
         raise ValueError(f"Unsupported connector type: {connector_required}")
     connector = PostgresConnector(dsn)
 
-    for table in config.source.tables:
-        validate_config_against_schema(config, get_schema=connector.get_schema)
+    validate_config_against_schema(config, get_schema=connector.get_schema)
     storage_path = config.project.storage_path
     storage = SqliteStorage(storage_path)
 

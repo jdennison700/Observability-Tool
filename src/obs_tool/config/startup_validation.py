@@ -11,19 +11,19 @@ class ConfigValidationError(Exception):
 
 def validate_env_vars(config: AppConfig) -> None:
     """Check that Warehouse environment variables are properly set."""
-    if not config.warehouse:
+    if not config.source.connection_env:
         raise ConfigValidationError("Warehouse configuration is missing.")
     if os.environ.get("WAREHOUSE_DSN") is None:
         raise ConfigValidationError("WAREHOUSE_DSN environment variable is not set.")
 
 def validate_storage_path(config: AppConfig) -> None:
     """Check that the storage path is writable."""
-    if not config.storage:
+    if not config.project.storage_path:
         raise ConfigValidationError("Storage configuration is missing.")
-    if not os.path.exists(config.storage.path):
-        raise ConfigValidationError(f"Storage path '{config.storage.path}' does not exist.")
-    if not os.access(config.storage.path, os.W_OK):
-        raise ConfigValidationError(f"Storage path '{config.storage.path}' is not writable.")
+    if not os.path.exists(config.project.storage_path):
+        raise ConfigValidationError(f"Storage path '{config.project.storage_path}' does not exist.")
+    if not os.access(config.project.storage_path, os.W_OK):
+        raise ConfigValidationError(f"Storage path '{config.project.storage_path}' is not writable.")
 
 def validate_columns_exist(table: TableConfig, schema: dict) -> None:
     """updated_at_column, checks columns, expectations columns must all exist (spec §7)."""
