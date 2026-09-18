@@ -16,7 +16,7 @@ class TestNormaliseType:
             ("smallint", "integer"),
             ("bigint", "bigint"),
             ("numeric", "decimal"),
-            ("character varying", "varchar"),
+            ("character varying", "string"),
             ("timestamp without time zone", "timestamp"),
             ("timestamp with time zone", "timestamp_tz"),
             ("ARRAY", "array"),
