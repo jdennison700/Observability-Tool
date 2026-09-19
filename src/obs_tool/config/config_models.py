@@ -7,7 +7,7 @@ from typing import Optional, Literal
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 
 CanonicalType = Literal["integer", "bigint", "float", "decimal", "boolean",
-    "string", "date", "timestamp", "json"]
+    "string", "date", "timestamp", "timestamp_tz", "json"]
 
 _DURATION_RE = re.compile(r"^(\d+)(h|d)$")
 

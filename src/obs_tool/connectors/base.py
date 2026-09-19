@@ -14,7 +14,7 @@ from datetime import datetime
 class Connector(ABC):
     @abstractmethod
     def get_schema(self, table_name: str) -> dict:
-        """Return column name -> {type, nullable} for the given table."""
+        """Return column name -> {type, nullable, max_length, numeric_precision, numeric_scale} for the given table."""
 
     @abstractmethod
     def get_row_count(self, table_name: str) -> int:
