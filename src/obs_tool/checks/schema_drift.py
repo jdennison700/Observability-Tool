@@ -1,14 +1,13 @@
 """Schema drift check (spec §4.1).
 
-Compares a table's current live schema to the last schema this tool recorded,
-and writes one event per detected column addition, removal, type change, or
-nullability change.
+Writes one event per detected column addition, removal, type change, or
+nullability change. Two modes:
 
-Cold start (no prior snapshot) seeds silently — no events on the first run.
-
-TODO(PERS-228 follow-up): contract-mode comparison (comparing against a
-declared `table.expectations.schema` instead of the last recorded snapshot,
-per spec §4.5) is not implemented yet.
+- contract: the table declares `expectations.schema` (spec §4.5). The live
+  schema is compared against the declared columns only; undeclared live
+  columns are ignored. No cold start — violations fire from the first run.
+- snapshot: no declared schema. The live schema is compared to the last
+  recorded snapshot. Cold start (no prior snapshot) seeds silently.
 """
 
 import json
@@ -81,6 +80,12 @@ def _diff_against_snapshot(previous_schema: dict, current_schema: dict) -> list[
     return changes
 
 
+def _contract_schema(table: TableConfig) -> dict | None:
+    if not table.expectations or not table.expectations.schema_:
+        return None
+    return {e.column: {"type": e.type, "nullable": e.nullable} for e in table.expectations.schema_}
+
+
 def _severity_for(change_type: ChangeType) -> Literal["critical", "warn"]:
     if change_type in ("column_removed", "type_changed"):
         return "critical"
@@ -106,13 +111,22 @@ def check_schema_drift(
 
     logger.debug("Running schema drift check for table %s.", table.name)
 
-    previous_row = storage.get_latest_run_snapshot(table.name, METRIC_NAME)
-    if previous_row is None:
-        logger.info("No prior schema snapshot for %s; seeding baseline silently.", table.name)
-        changes = []  # cold start: no prior snapshot -> seed silently, no events
+    contract = _contract_schema(table)
+    if contract is not None:
+        mode = "contract"
+        logger.info("Comparing %s against declared schema contract (%d column(s)).", table.name, len(contract))
+        declared_live = {c: current_schema[c] for c in contract if c in current_schema}
+        changes = _diff_against_snapshot(contract, declared_live)
     else:
-        previous_schema = json.loads(previous_row["metric_json"])
-        changes = _diff_against_snapshot(previous_schema, current_schema)
+        mode = "snapshot"
+        previous_row = storage.get_latest_run_snapshot(table.name, METRIC_NAME)
+        if previous_row is None:
+            logger.info("No prior schema snapshot for %s; seeding baseline silently.", table.name)
+            changes = []  # cold start: no prior snapshot -> seed silently, no events
+        else:
+            logger.debug("Comparing %s against last recorded schema snapshot.", table.name)
+            previous_schema = json.loads(previous_row["metric_json"])
+            changes = _diff_against_snapshot(previous_schema, current_schema)
 
     events = []
     for change in changes:
@@ -126,6 +140,7 @@ def check_schema_drift(
                 "change_type": change["change_type"],
                 "old": change["old"],
                 "new": change["new"],
+                "mode": mode,
             },
         }
         logger.warning(

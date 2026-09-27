@@ -83,6 +83,7 @@ class TestSnapshotModeDrift:
             "change_type": "column_added",
             "old": None,
             "new": {"type": "string", "nullable": True},
+            "mode": "snapshot",
         }
 
     def test_column_removed_emits_critical_event(self, tmp_path):
@@ -101,6 +102,7 @@ class TestSnapshotModeDrift:
             "change_type": "column_removed",
             "old": {"type": "string", "nullable": True},
             "new": None,
+            "mode": "snapshot",
         }
 
     def test_type_changed_emits_critical_event(self, tmp_path):
@@ -119,6 +121,7 @@ class TestSnapshotModeDrift:
             "change_type": "type_changed",
             "old": {"type": "integer", "nullable": False},
             "new": {"type": "decimal", "nullable": False},
+            "mode": "snapshot",
         }
 
     def test_nullability_loosened_emits_warn_event(self, tmp_path):
@@ -243,3 +246,94 @@ class TestEventPayloadShape:
         assert events[0]["check_type"] == "schema_drift"
         assert events[0]["config_version"] == "config-hash-123"
         assert events[0]["table_name"] == "public.accounts"
+
+
+def contract_col(column: str, type_: str, nullable: bool) -> dict:
+    return {"column": column, "type": type_, "nullable": nullable}
+
+
+class TestContractMode:
+    def test_matching_contract_emits_no_events(self, tmp_path):
+        storage = make_storage(tmp_path)
+        table = make_table(contract=[contract_col("id", "integer", False)])
+
+        events = check_schema_drift(table, {"id": col("integer", False)}, storage, "v1")
+
+        assert events == []
+
+    def test_violation_fires_on_cold_start(self, tmp_path):
+        storage = make_storage(tmp_path)
+        table = make_table(contract=[contract_col("amount", "integer", False)])
+
+        events = check_schema_drift(table, {"amount": col("decimal", False)}, storage, "v1")
+
+        assert len(events) == 1
+        assert storage.get_events(table.name) != []
+
+    def test_type_mismatch_is_critical_with_contract_as_old(self, tmp_path):
+        storage = make_storage(tmp_path)
+        table = make_table(contract=[contract_col("amount", "integer", False)])
+
+        events = check_schema_drift(table, {"amount": col("decimal", False)}, storage, "v1")
+
+        assert events[0]["severity"] == "critical"
+        assert events[0]["payload"] == {
+            "column": "amount",
+            "change_type": "type_changed",
+            "old": {"type": "integer", "nullable": False},
+            "new": {"type": "decimal", "nullable": False},
+            "mode": "contract",
+        }
+
+    def test_nullability_mismatch_is_warn(self, tmp_path):
+        storage = make_storage(tmp_path)
+        table = make_table(contract=[contract_col("status", "string", False)])
+
+        events = check_schema_drift(table, {"status": col("string", True)}, storage, "v1")
+
+        assert len(events) == 1
+        assert events[0]["severity"] == "warn"
+        assert events[0]["payload"]["change_type"] == "nullability_changed"
+
+    def test_declared_column_missing_is_critical_removal(self, tmp_path):
+        storage = make_storage(tmp_path)
+        table = make_table(contract=[
+            contract_col("id", "integer", False),
+            contract_col("email", "string", True),
+        ])
+
+        events = check_schema_drift(table, {"id": col("integer", False)}, storage, "v1")
+
+        assert len(events) == 1
+        assert events[0]["severity"] == "critical"
+        assert events[0]["payload"]["change_type"] == "column_removed"
+        assert events[0]["payload"]["column"] == "email"
+
+    def test_undeclared_live_column_is_ignored(self, tmp_path):
+        storage = make_storage(tmp_path)
+        table = make_table(contract=[contract_col("id", "integer", False)])
+        current = {"id": col("integer", False), "extra": col("string", True)}
+
+        events = check_schema_drift(table, current, storage, "v1")
+
+        assert events == []
+
+    def test_contract_takes_precedence_over_snapshot(self, tmp_path):
+        storage = make_storage(tmp_path)
+        table = make_table(contract=[contract_col("amount", "decimal", False)])
+        seed_snapshot(storage, table.name, {"amount": col("integer", False)})
+
+        events = check_schema_drift(table, {"amount": col("decimal", False)}, storage, "v1")
+
+        assert events == []
+
+    def test_snapshot_still_written(self, tmp_path):
+        storage = make_storage(tmp_path)
+        table = make_table(contract=[contract_col("id", "integer", False)])
+        current = {"id": col("integer", False), "extra": col("string", True)}
+
+        check_schema_drift(table, current, storage, "v1")
+
+        snapshots = storage.get_run_snapshots(table.name)
+        assert len(snapshots) == 1
+        assert json.loads(snapshots[0]["metric_json"]) == current
