@@ -14,6 +14,8 @@ per spec §4.5) is not implemented yet.
 import json
 from typing import Literal
 
+import logging
+
 from obs_tool.config.config_models import TableConfig
 from obs_tool.storage.base import Storage
 
@@ -22,6 +24,7 @@ METRIC_NAME = "schema_snapshot"
 
 ChangeType = Literal["column_added", "column_removed", "type_changed", "nullability_changed"]
 
+logger = logging.getLogger(__name__)
 
 def _type_nullable(column: dict) -> dict:
     return {"type": column["type"], "nullable": column["nullable"]}
@@ -36,22 +39,44 @@ def _diff_against_snapshot(previous_schema: dict, current_schema: dict) -> list[
     type and nullable. Returns one change record per individual difference —
     a column whose type and nullability both changed produces two records.
     """
-    #TODO Check current schema is not none
+
+    if current_schema is None:
+        logger.error("Current schema is None, cannot diff against snapshot.")
+        raise ValueError("Current schema is None, cannot diff against snapshot.")
+
+    logger.debug(
+        "Diffing schema: %d previous column(s), %d current column(s).",
+        len(previous_schema), len(current_schema),
+    )
+
     changes = []
     for column in sorted(previous_schema):
         previous = previous_schema[column]
         current = current_schema.get(column)
         if current is None:
+            logger.debug("Column removed: %s", column)
             changes.append(_change(column, "column_removed", old=_type_nullable(previous), new=None))
             continue
         if current["type"] != previous["type"]:
+            logger.debug(
+                "Column type changed: %s (%s -> %s)", column, previous["type"], current["type"],
+            )
             changes.append(_change(column, "type_changed", old=_type_nullable(previous), new=_type_nullable(current)))
         if current["nullable"] != previous["nullable"]:
+            logger.debug(
+                "Column nullability changed: %s (%s -> %s)", column, previous["nullable"], current["nullable"],
+            )
             changes.append(_change(column, "nullability_changed", old=_type_nullable(previous), new=_type_nullable(current)))
 
     for column in sorted(current_schema):
         if column not in previous_schema:
+            logger.debug("Column added: %s", column)
             changes.append(_change(column, "column_added", old=None, new=_type_nullable(current_schema[column])))
+
+    if changes:
+        logger.info("Detected %d schema change(s).", len(changes))
+    else:
+        logger.debug("No schema changes detected.")
 
     return changes
 
@@ -79,8 +104,11 @@ def check_schema_drift(
     to invoke this check at all.
     """
 
+    logger.debug("Running schema drift check for table %s.", table.name)
+
     previous_row = storage.get_latest_run_snapshot(table.name, METRIC_NAME)
     if previous_row is None:
+        logger.info("No prior schema snapshot for %s; seeding baseline silently.", table.name)
         changes = []  # cold start: no prior snapshot -> seed silently, no events
     else:
         previous_schema = json.loads(previous_row["metric_json"])
@@ -100,6 +128,10 @@ def check_schema_drift(
                 "new": change["new"],
             },
         }
+        logger.warning(
+            "Schema drift on %s.%s: %s (severity=%s)",
+            table.name, change["column"], change["change_type"], event["severity"],
+        )
         storage.write_event(event)
         events.append(event)
 
@@ -110,5 +142,6 @@ def check_schema_drift(
         "metric_value": None,
         "metric_json": current_schema,
     })
+    logger.info("Wrote schema snapshot for %s (%d columns)", table.name, len(current_schema))
 
     return events
