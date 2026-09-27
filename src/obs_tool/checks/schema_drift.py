@@ -39,10 +39,6 @@ def _diff_against_snapshot(previous_schema: dict, current_schema: dict) -> list[
     a column whose type and nullability both changed produces two records.
     """
 
-    if current_schema is None:
-        logger.error("Current schema is None, cannot diff against snapshot.")
-        raise ValueError("Current schema is None, cannot diff against snapshot.")
-
     logger.debug(
         "Diffing schema: %d previous column(s), %d current column(s).",
         len(previous_schema), len(current_schema),
@@ -100,7 +96,7 @@ def check_schema_drift(
 ) -> list[dict]:
     """Detect schema drift for one table and write one event per change.
 
-    Always writes the current schema as a new run_snapshot afterwards, so the
+    Writes the current schema as a new run_snapshot afterwards (only if mode == "snapshot"), so the
     next run's baseline reflects what was just observed, not what was last
     seen before drift started.
 
@@ -110,6 +106,10 @@ def check_schema_drift(
     """
 
     logger.debug("Running schema drift check for table %s.", table.name)
+
+    if current_schema is None:
+        logger.error("Current schema is None, cannot diff against snapshot.")
+        raise ValueError("Current schema is None, cannot diff against snapshot.")
 
     contract = _contract_schema(table)
     if contract is not None:
@@ -149,14 +149,14 @@ def check_schema_drift(
         )
         storage.write_event(event)
         events.append(event)
-
-    storage.write_run_snapshot({
-        "table_name": table.name,
-        "column_name": None,
-        "metric_name": METRIC_NAME,
-        "metric_value": None,
-        "metric_json": current_schema,
-    })
-    logger.info("Wrote schema snapshot for %s (%d columns)", table.name, len(current_schema))
+    if mode == "snapshot":
+        storage.write_run_snapshot({
+            "table_name": table.name,
+            "column_name": None,
+            "metric_name": METRIC_NAME,
+            "metric_value": None,
+            "metric_json": current_schema,
+        })
+        logger.info("Wrote schema snapshot for %s (%d columns)", table.name, len(current_schema))
 
     return events
