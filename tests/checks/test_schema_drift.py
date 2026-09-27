@@ -327,7 +327,7 @@ class TestContractMode:
 
         assert events == []
 
-    def test_snapshot_still_written(self, tmp_path):
+    def test_no_snapshot_written_in_contract_mode(self, tmp_path):
         storage = make_storage(tmp_path)
         table = make_table(contract=[contract_col("id", "integer", False)])
         current = {"id": col("integer", False), "extra": col("string", True)}
@@ -335,5 +335,4 @@ class TestContractMode:
         check_schema_drift(table, current, storage, "v1")
 
         snapshots = storage.get_run_snapshots(table.name)
-        assert len(snapshots) == 1
-        assert json.loads(snapshots[0]["metric_json"]) == current
+        assert len(snapshots) == 0

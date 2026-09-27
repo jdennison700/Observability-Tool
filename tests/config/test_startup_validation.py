@@ -1,5 +1,6 @@
 """Tests for startup validation checks against a (fake) live schema."""
 
+import logging
 import os
 
 import pytest
@@ -193,23 +194,27 @@ class TestValidateSchemaExpectations:
         table = TableConfig(name="t")
         validate_schema_expectations(table, COLUMN_SCHEMA)
 
-    def test_type_mismatch_raises(self):
+    def test_type_mismatch_warns(self, caplog):
         table = TableConfig(
             name="t",
             expectations={"schema": [{"column": "id", "type": "string"}]},
         )
-        with pytest.raises(ConfigValidationError, match="expected type"):
+        with caplog.at_level(logging.WARNING):
             validate_schema_expectations(table, COLUMN_SCHEMA)
 
-    def test_nullable_mismatch_raises(self):
+        assert "expected type" in caplog.text
+
+    def test_nullable_mismatch_warns(self, caplog):
         table = TableConfig(
             name="t",
             expectations={
                 "schema": [{"column": "id", "type": "integer", "nullable": True}]
             },
         )
-        with pytest.raises(ConfigValidationError, match="nullable"):
+        with caplog.at_level(logging.WARNING):
             validate_schema_expectations(table, COLUMN_SCHEMA)
+
+        assert "nullable" in caplog.text
 
     def test_matching_expectation_passes(self):
         table = TableConfig(
