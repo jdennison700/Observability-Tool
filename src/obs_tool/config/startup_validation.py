@@ -5,6 +5,10 @@ import os
 from obs_tool.config.config_models import AppConfig, TableConfig
 from obs_tool.config.loader import resolve_source_config
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class ConfigValidationError(Exception):
     """Raised when a structurally-valid config fails a startup check against live schema."""
@@ -61,8 +65,9 @@ def validate_at_least_one_enabled_check(table: TableConfig, defaults) -> None:
 
 
 def validate_schema_expectations(table: TableConfig, schema: dict) -> None:
-    """Declared expectations.schema entries must match the live column's actual
-    type and nullability (spec §6.3) — not just exist, but match.
+    """Warn when declared expectations.schema entries don't match the live column.
+
+    Not fatal: the schema drift check reports these as events at runtime.
     """
     if not table.expectations:
         return
@@ -71,14 +76,14 @@ def validate_schema_expectations(table: TableConfig, schema: dict) -> None:
         if actual is None:
             continue  # already caught by validate_columns_exist
         if actual["type"] != expectation.type:
-            raise ConfigValidationError(
-                f"table '{table.name}' column '{expectation.column}': expected type "
-                f"'{expectation.type}', found '{actual['type']}'"
+            logger.warning(
+                "table '%s' column '%s': expected type '%s', found '%s'",
+                table.name, expectation.column, expectation.type, actual["type"],
             )
         if actual["nullable"] != expectation.nullable:
-            raise ConfigValidationError(
-                f"table '{table.name}' column '{expectation.column}': expected nullable="
-                f"{expectation.nullable}, found {actual['nullable']}"
+            logger.warning(
+                "table '%s' column '%s': expected nullable=%s, found %s",
+                table.name, expectation.column, expectation.nullable, actual["nullable"],
             )
 
 

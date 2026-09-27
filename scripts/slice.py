@@ -20,6 +20,7 @@ from obs_tool.config.loader import load_config
 from obs_tool.config.startup_validation import validate_config_against_schema
 from obs_tool.connectors.postgres import PostgresConnector
 from obs_tool.storage.sqlite import SqliteStorage
+from obs_tool.checks.schema_drift import check_schema_drift
 
 from dotenv import load_dotenv
 
@@ -41,38 +42,10 @@ def main():
     storage = SqliteStorage(storage_path)
 
     for table in config.source.tables:
-        table_name = table.name
+        current_schema = connector.get_schema(table.name)
+        print(f"Current schema for {table.name}: {json.dumps(current_schema, indent=2)}")
 
-
-        print(f"Introspecting {table_name}...")
-        schema = connector.get_schema(table_name)
-
-        print(f"Found {len(schema)} columns:")
-
-        storage.write_run_snapshot({
-            "table_name": table_name,
-            "column_name": None,
-            "metric_name": "schema_snapshot",
-            "metric_value": None,
-            "metric_json": schema,
-        })
-
-        print(f"Wrote 1 run metric to {storage_path}.")
-
-        row_count = connector.get_row_count(table_name)
-
-        print(f"Found {row_count} rows.")
-
-        storage.write_run_snapshot({
-            "table_name": table_name,
-            "column_name": None,
-            "metric_name": "row_count",
-            "metric_value": row_count,
-            "metric_json": None,
-        })
-
-    
-    print(f"Wrote 1 run metric to {storage_path}.")
+        changes = check_schema_drift(table, current_schema, storage, version)
 
 if __name__ == "__main__":
     main()
